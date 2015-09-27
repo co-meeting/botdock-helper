@@ -77,8 +77,13 @@ class ForceBots
       logger.error "DOMAIN, REDIS_PORT, REDIS_HOST, SALESFORCE_CLIENT_ID, SALESFORCE_CLIENT_SECRET, SALESFORCE_REDIRECT_URI must be specified."
       process.exit 0
 
-    @client0 = redis.createClient(process.env.REDIS_URL)
-    @client = redis.createClient(process.env.REDIS_URL)
+    # リトライ間隔は最大30分
+    @client0 = redis.createClient(process.env.REDIS_URL, {retry_max_delay:30*60*1000})
+    @client0.on 'error', (err) ->
+      logger.error err.message
+    @client = redis.createClient(process.env.REDIS_URL, {retry_max_delay:30*60*1000})
+    @client.on 'error', (err) ->
+      logger.error err.message
 
     _findDB(@client)
       .then (dbindex) ->
@@ -112,6 +117,10 @@ class ForceBots
     sessionId = _generateSessionId()
     logger.info "sessionId: #{sessionId}, userId: #{userId}, db: #{@dbindex}"
 
+    unless client0.connected
+      res.send "現在メンテナンス中です。大変ご不便をおかけいたしますが、今しばらくお待ちください。"
+      return
+
     client0.multi()
       .hmset sessionId,
         {
@@ -141,6 +150,11 @@ class ForceBots
       unless userId
         res.send "cannot get User ID"
         reject "cannot get User ID"
+        return
+
+      unless client.connected
+        res.send "現在メンテナンス中です。大変ご不便をおかけいたしますが、今しばらくお待ちください。"
+        reject "Redis is down."
         return
 
       client.hgetall userId, (err, oauthInfo) ->
