@@ -114,6 +114,12 @@ class ForceBots
       logger.error err
       return
 
+    if res.message.roomType != 1
+      res.send "#{res.message.user.name}さん\n
+まだSalesforceへの認証ができていないため、ご利用いただけません。\n
+まずペアトークで私に話しかけて認証をしてからご利用ください。"
+      return
+
     sessionId = _generateSessionId()
     logger.info "sessionId: #{sessionId}, userId: #{userId}, db: #{@dbindex}"
 
@@ -134,7 +140,9 @@ class ForceBots
           return
 
         authUrl = oauth2.getAuthorizationUrl {state: sessionId}
-        res.send "このBotを利用するには、以下のURLからSalesforceにログインしてください。\n#{authUrl}"
+        res.send "このBotを利用するには、Salesforceにログインする必要があります。\n
+以下のURLからSalesforceにログインしてください。\n
+#{authUrl}"
 
   # jsforceのConnectionオブジェクトを取得します。
   #
@@ -149,12 +157,12 @@ class ForceBots
       userId = res.message?.user?.id
       unless userId
         res.send "cannot get User ID"
-        reject "cannot get User ID"
+        reject {code:"INVALID_PARAM", message:"cannot get User ID"}
         return
 
       unless client.connected
         res.send "現在メンテナンス中です。大変ご不便をおかけいたしますが、今しばらくお待ちください。"
-        reject "Redis is down."
+        reject {code:"REDIS_DOWN", message:"Redis is down."}
         return
 
       client.hgetall userId, (err, oauthInfo) ->
@@ -164,7 +172,7 @@ class ForceBots
 
         unless oauthInfo
           _this.sendAuthorizationUrl res
-          reject "認証していません"
+          reject {code:"NO_AUTH", message:"認証していません"}
           return
 
         conn = new jsforce.Connection
