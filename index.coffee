@@ -83,20 +83,22 @@ class BotDockHelper
   # SalesforceのAuthroization URLをユーザに送信します。
   # 
   # @param [hubot.Response] res HubotのResponseオブジェクト
-  # @param [String] userId res.message.user.id以外のユーザIDにOAuthトークンを関連付けたい場合に指定する
-  sendAuthorizationUrl: (res, userId = null) ->
+  # @option options [String] userId res.message.user.id以外のユーザIDにOAuthトークンを関連付けたい場合に指定する
+  # @option options [String] skipGroupTalkHelp グループトークで認証していないユーザへの案内を非表示にする
+  sendAuthorizationUrl: (res, options = {}) ->
     _this = @
     oauth2 = @oauth2
     client0 = @client0
     logger = @robot.logger
 
-    userId = userId || res.message?.user?.id
+    userId = options.userId || res.message?.user?.id
     unless userId
       res.send "cannot get User ID"
       return
 
     if res.message.roomType != 1
-      res.send "#{res.message.user.name}さん\n
+      unless options.skipGroupTalkHelp
+        res.send "#{res.message.user.name}さん\n
 まだSalesforceへの認証ができていないため、ご利用いただけません。\n
 まずペアトークで私に話しかけて認証をしてからご利用ください。"
       return
@@ -129,15 +131,16 @@ class BotDockHelper
   # jsforceのConnectionオブジェクトを取得します。
   #
   # @param [hubot.Response] res HubotのResponseオブジェクト
-  # @param [String] userId res.message.user.id以外のユーザIDにOAuthトークンを関連付けたい場合に指定する
+  # @option options [String] userId res.message.user.id以外のユーザIDにOAuthトークンを関連付けたい場合に指定する
+  # @option options [String] skipGroupTalkHelp グループトークで認証していないユーザへの案内を非表示にする
   # @return [Promise] jsforceのConnectionオブジェクトをラップしたPromiseオブジェクト
-  getJsforceConnection: (res, userId = null) ->
+  getJsforceConnection: (res, options = {}) ->
     _this = @
     oauth2 = @oauth2
     client = @client
     logger = @robot.logger
     new Promise (resolve, reject) ->
-      userId = userId || res.message?.user?.id
+      userId = options.userId || res.message?.user?.id
       unless userId
         res.send "cannot get User ID"
         reject {code:"INVALID_PARAM", message:"cannot get User ID"}
@@ -154,7 +157,7 @@ class BotDockHelper
           return
 
         unless oauthInfo
-          _this.sendAuthorizationUrl res, userId
+          _this.sendAuthorizationUrl res, options
           reject {code:"NO_AUTH", message:"認証していません"}
           return
 
@@ -177,6 +180,6 @@ class BotDockHelper
   # @param [hubot.Response] res HubotのResponseオブジェクト
   # @return [Promise] jsforceのConnectionオブジェクトをラップしたPromiseオブジェクト
   checkAuthenticationOnJoin: (res) ->
-    this.getJsforceConnection(res, _getUserIdOnJoin(res))
+    this.getJsforceConnection(res, { userId:_getUserIdOnJoin(res), skipGroupTalkHelp:true })
 
 module.exports = BotDockHelper
