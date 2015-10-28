@@ -6,18 +6,18 @@ class BotDockHelper
     Math.random().toString(36).substring(3)
 
   _findDB = (client, index = 1) ->
-    domain = process.env.DOMAIN
+    orgId = process.env.SALESFORCE_ORG_ID
     new Promise (resolve, reject) ->
       client.multi()
         .select(index)
-        .get('domain')
+        .get('SALESFORCE_ORG_ID')
         .exec (err, result) ->
-          if result[1] == domain
+          if result[1] == orgId
             resolve index
             return
 
           unless result[1]
-            client.set 'domain', domain, (err, resSet) ->
+            client.set 'SALESFORCE_ORG_ID', orgId, (err, resSet) ->
               resolve index
             return
 
@@ -49,12 +49,12 @@ class BotDockHelper
   constructor: (@robot) ->
     _this = @
     logger = @robot.logger
-    unless process.env.DOMAIN &&
+    unless process.env.SALESFORCE_ORG_ID &&
         process.env.REDIS_URL && 
         process.env.SALESFORCE_CLIENT_ID && 
         process.env.SALESFORCE_CLIENT_SECRET && 
         process.env.SALESFORCE_REDIRECT_URI
-      logger.error "DOMAIN, REDIS_PORT, REDIS_HOST, SALESFORCE_CLIENT_ID, SALESFORCE_CLIENT_SECRET, SALESFORCE_REDIRECT_URI must be specified."
+      logger.error "SALESFORCE_ORG_ID, REDIS_PORT, REDIS_HOST, SALESFORCE_CLIENT_ID, SALESFORCE_CLIENT_SECRET, SALESFORCE_REDIRECT_URI must be specified."
       process.exit 0
 
     # リトライ間隔は最大30分
@@ -113,6 +113,7 @@ class BotDockHelper
         {
           userId: userId
           db: @dbindex
+          sfOrgId: process.env.SALESFORCE_ORG_ID
         }
       .expire(sessionId, 360)
       .exec (err, result) ->

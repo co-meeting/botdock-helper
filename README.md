@@ -1,11 +1,11 @@
 # BotDock Helper
 
-HubotにSalesforce認証機能を追加します。
-起動時に指定したDOMAIN環境変数ごとにトークン情報保存先のRedisのDBを分けます。
+HubotにSalesforce認証機能を追加します。  
+起動時に指定したSALESFORCE_ORG_ID環境変数ごとにトークン情報保存先のRedisのDBを分けます。
 
 以下の環境変数が必須です。
 
-- DOMAIN : 利用団体を区別するためのキー。例）example.com
+- SALESFORCE_ORG_ID : Salesforceの組織ID（15桁）
 - REDIS_URL : 情報保存先のRedisのURL 例）redis://127.0.0.1:6379
 - SALESFORCE_CLIENT_ID : Salesforceの接続アプリケーションのクライアントID
 - SALESFORCE_CLIENT_SECRET : Salesforceの接続アプリケーションのクライアントシークレット
