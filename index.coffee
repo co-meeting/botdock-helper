@@ -18,6 +18,9 @@ redis = require('redis')
 #   module.exports = (robot) ->
 #     force = new ForceBots(robot)
 #
+#     robot.join (res) ->
+#       force.checkAuthenticationOnJoin(res)
+#
 #     robot.respond /LOGIN$/i, (res) ->
 #       force.sendAuthorizationUrl(res)
 #
@@ -62,6 +65,17 @@ class ForceBots
             .catch (err) ->
               reject err
 
+  # ペアトークにjoin時に相手のユーザIDを取得する
+  _getUserIdOnJoin = (res) ->
+    if !res.message?.roomUsers || res.message.roomUsers.length != 2
+      return
+    unless res.message?.user?.id
+      return
+    for user in res.message.roomUsers
+      if user.id != res.message.user.id
+        return user.id
+    return
+
   # ForceBotsのコンストラクタ
   # 
   # @param [hubot.Robot] Hubotのrobotオブジェクト
@@ -103,15 +117,16 @@ class ForceBots
   # SalesforceのAuthroization URLをユーザに送信します。
   # 
   # @param [hubot.Response] res HubotのResponseオブジェクト
-  sendAuthorizationUrl: (res) ->
+  # @param [String] userId res.message.user.id以外のユーザIDにOAuthトークンを関連付けたい場合に指定する
+  sendAuthorizationUrl: (res, userId = null) ->
     _this = @
     oauth2 = @oauth2
     client0 = @client0
     logger = @robot.logger
-    userId = res.message?.user?.id
+
+    userId = userId || res.message?.user?.id
     unless userId
       res.send "cannot get User ID"
-      logger.error err
       return
 
     if res.message.roomType != 1
@@ -147,14 +162,15 @@ class ForceBots
   # jsforceのConnectionオブジェクトを取得します。
   #
   # @param [hubot.Response] res HubotのResponseオブジェクト
+  # @param [String] userId res.message.user.id以外のユーザIDにOAuthトークンを関連付けたい場合に指定する
   # @return [Promise] jsforceのConnectionオブジェクトをラップしたPromiseオブジェクト
-  getJsforceConnection: (res) ->
+  getJsforceConnection: (res, userId = null) ->
     _this = @
     oauth2 = @oauth2
     client = @client
     logger = @robot.logger
     new Promise (resolve, reject) ->
-      userId = res.message?.user?.id
+      userId = userId || res.message?.user?.id
       unless userId
         res.send "cannot get User ID"
         reject {code:"INVALID_PARAM", message:"cannot get User ID"}
@@ -171,7 +187,7 @@ class ForceBots
           return
 
         unless oauthInfo
-          _this.sendAuthorizationUrl res
+          _this.sendAuthorizationUrl res, userId
           reject {code:"NO_AUTH", message:"認証していません"}
           return
 
@@ -187,5 +203,13 @@ class ForceBots
             logger.info "save to redis accessToken: #{accessToken}"
         
         resolve conn
+
+  # join時に接続がなければ認証URLをユーザに送ります。
+  # join時のみ使用してください。
+  #
+  # @param [hubot.Response] res HubotのResponseオブジェクト
+  # @return [Promise] jsforceのConnectionオブジェクトをラップしたPromiseオブジェクト
+  checkAuthenticationOnJoin: (res) ->
+    this.getJsforceConnection(res, _getUserIdOnJoin(res))
 
 module.exports = ForceBots
