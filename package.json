@@ -1,6 +1,6 @@
 {
   "name": "botdock-helper",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Salesforce integration for Hubot",
   "main": "index",
   "scripts": {
