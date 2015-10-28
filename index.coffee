@@ -1,41 +1,7 @@
 jsforce = require('jsforce')
 redis = require('redis')
 
-#
-# HubotにSalesforce認証機能を追加します。
-# 起動時に指定したDOMAIN環境変数ごとにトークン情報保存先のRedisのDBを分けます。
-#
-# 以下の環境変数が必須です。
-# - DOMAIN : 利用団体を区別するためのキー。例）example.com
-# - REDIS_URL : 情報保存先のRedisのURL 例）redis://127.0.0.1:6379
-# - SALESFORCE_CLIENT_ID : Salesforceの接続アプリケーションのクライアントID
-# - SALESFORCE_CLIENT_SECRET : Salesforceの接続アプリケーションのクライアントシークレット
-# - SALESFORCE_REDIRECT_URI : Salesforceの接続アプリケーションのコールバックURL。bot-auth-serverのURLを指定する。
-# 
-# @example 使い方
-#   ForceBots = require '../lib/forcebots'
-#
-#   module.exports = (robot) ->
-#     force = new ForceBots(robot)
-#
-#     robot.join (res) ->
-#       force.checkAuthenticationOnJoin(res)
-#
-#     robot.respond /LOGIN$/i, (res) ->
-#       force.sendAuthorizationUrl(res)
-#
-#     robot.respond /PING$/i, (res) ->
-#       force.getJsforceConnection(res)
-#       .then (conn) ->
-#         conn.query "SELECT Id, Name FROM Account"
-#       .then (result) ->
-#         console.log("total : " + result.totalSize)
-#         console.log("fetched : " + result.records.length)
-#
-#         res.send "total: " + result.totalSize
-#       .catch (err, result) ->
-#         console.error err
-class ForceBots
+class BotDockHelper
   _generateSessionId = ->
     Math.random().toString(36).substring(3)
 
@@ -76,7 +42,7 @@ class ForceBots
         return user.id
     return
 
-  # ForceBotsのコンストラクタ
+  # BotDockHelperのコンストラクタ
   # 
   # @param [hubot.Robot] Hubotのrobotオブジェクト
   # 
@@ -212,4 +178,4 @@ class ForceBots
   checkAuthenticationOnJoin: (res) ->
     this.getJsforceConnection(res, _getUserIdOnJoin(res))
 
-module.exports = ForceBots
+module.exports = BotDockHelper

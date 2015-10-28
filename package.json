@@ -1,5 +1,5 @@
 {
-  "name": "forcebots",
+  "name": "botdock-helper",
   "version": "0.0.1",
   "description": "Salesforce integration for Hubot",
   "main": "index",
@@ -8,16 +8,21 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+ssh://git@bitbucket.org/comeeting/force-bots.git"
+    "url": "git://github.com/co-meeting/botdock-helper.git"
   },
   "keywords": [
     "hubot",
     "salesforce"
   ],
   "author": "co-meeting, Inc.",
-  "license": "UNLICENSED",
-  "private": true,
-  "homepage": "https://bitbucket.org/comeeting/force-bots#readme",
+  "license": "MIT",
+  "licenses": [
+    {
+      "type": "MIT",
+      "url": "http://github.com/co-meeting/botdock-helper/raw/master/LICENSE"
+    }
+  ],
+  "homepage": "https://github.com/co-meeting/botdock-helper",
   "dependencies": {
     "coffee-script": "^1.10.0",
     "jsforce": "^1.5.0",
