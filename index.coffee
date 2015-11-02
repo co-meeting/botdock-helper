@@ -5,31 +5,10 @@ class BotDockHelper
   _generateSessionId = ->
     Math.random().toString(36).substring(3)
 
-  _findDB = (client, index = 1) ->
-    orgId = process.env.SALESFORCE_ORG_ID
-    new Promise (resolve, reject) ->
-      client.multi()
-        .select(index)
-        .get('SALESFORCE_ORG_ID')
-        .exec (err, result) ->
-          if result[1] == orgId
-            resolve index
-            return
-
-          unless result[1]
-            client.set 'SALESFORCE_ORG_ID', orgId, (err, resSet) ->
-              resolve index
-            return
-
-          if index >= 1000
-            reject "DBは1000までしか使用できません。"
-            return
-
-          _findDB(client, index + 1)
-            .then (resFind) ->
-              resolve resFind
-            .catch (err) ->
-              reject err
+  _createRedisClient = ->
+    client = redis.createClient(process.env.REDIS_URL, {retry_max_delay:30*60*1000})
+    client.on 'error', (err) ->
+      logger.error err.message
 
   # ペアトークにjoin時に相手のユーザIDを取得する
   _getUserIdOnJoin = (res) ->
@@ -42,6 +21,10 @@ class BotDockHelper
         return user.id
     return
 
+  # Directの組織IDを収得
+  _getDomainId = (res) ->
+    res.message.rooms[res.message.room].domainId
+
   # BotDockHelperのコンストラクタ
   # 
   # @param [hubot.Robot] Hubotのrobotオブジェクト
@@ -49,28 +32,20 @@ class BotDockHelper
   constructor: (@robot) ->
     _this = @
     logger = @robot.logger
-    unless process.env.SALESFORCE_ORG_ID &&
-        process.env.REDIS_URL && 
+    unless process.env.REDIS_URL && 
         process.env.SALESFORCE_CLIENT_ID && 
         process.env.SALESFORCE_CLIENT_SECRET && 
-        process.env.SALESFORCE_REDIRECT_URI
-      logger.error "SALESFORCE_ORG_ID, REDIS_PORT, REDIS_HOST, SALESFORCE_CLIENT_ID, SALESFORCE_CLIENT_SECRET, SALESFORCE_REDIRECT_URI must be specified."
+        process.env.SALESFORCE_REDIRECT_URI &&
+        process.env.SALESFORCE_ORG_ID
+      logger.error "REDIS_PORT, REDIS_HOST, SALESFORCE_CLIENT_ID, SALESFORCE_CLIENT_SECRET, SALESFORCE_REDIRECT_URI, SALESFORCE_ORG_ID must be specified."
       process.exit 0
 
     # リトライ間隔は最大30分
-    @client0 = redis.createClient(process.env.REDIS_URL, {retry_max_delay:30*60*1000})
-    @client0.on 'error', (err) ->
-      logger.error err.message
-    @client = redis.createClient(process.env.REDIS_URL, {retry_max_delay:30*60*1000})
-    @client.on 'error', (err) ->
-      logger.error err.message
+    @client0 = _createRedisClient()
+    @client = _createRedisClient()
 
-    _findDB(@client)
-      .then (dbindex) ->
-        logger.info "DB #{dbindex} is selected."
-        _this.dbindex = dbindex
-      .catch (err) ->
-        console.error err
+    # direct組織IDとRedis DB indexのマップ保存用
+    @redisDBMap = {}
 
     @oauth2 = new jsforce.OAuth2 {
       # you can change loginUrl to connect to sandbox or prerelease env.
@@ -104,29 +79,34 @@ class BotDockHelper
       return
 
     sessionId = _generateSessionId()
-    logger.info "sessionId: #{sessionId}, userId: #{userId}, db: #{@dbindex}"
 
     unless client0.connected
       res.send "現在メンテナンス中です。大変ご不便をおかけいたしますが、今しばらくお待ちください。"
       return
 
-    client0.multi()
-      .hmset sessionId,
-        {
-          userId: userId
-          db: @dbindex
-          sfOrgId: process.env.SALESFORCE_ORG_ID
-        }
-      .expire(sessionId, 360)
-      .exec (err, result) ->
-        if err
-          logger.error err
-          return
+    _this._findDB(res)
+      .then (dbindex) ->
+        logger.info "sessionId: #{sessionId}, userId: #{userId}, db: #{dbindex}"
+        client0.multi()
+          .hmset sessionId,
+            {
+              userId: userId
+              db: dbindex
+              orgId: _getDomainId(res)
+              sfOrgId: process.env.SALESFORCE_ORG_ID
+            }
+          .expire(sessionId, 360)
+          .exec (err, result) ->
+            if err
+              logger.error err
+              return
 
-        authUrl = oauth2.getAuthorizationUrl {state: sessionId}
-        res.send "このBotを利用するには、Salesforceにログインする必要があります。\n
+            authUrl = oauth2.getAuthorizationUrl {state: sessionId}
+            res.send "このBotを利用するには、Salesforceにログインする必要があります。\n
 以下のURLからSalesforceにログインしてください。\n
 #{authUrl}"
+      .catch (err) ->
+        logger.error err
 
   # jsforceのConnectionオブジェクトを取得します。
   #
@@ -146,33 +126,45 @@ class BotDockHelper
         reject {code:"INVALID_PARAM", message:"cannot get User ID"}
         return
 
-      unless client.connected
-        res.send "現在メンテナンス中です。大変ご不便をおかけいたしますが、今しばらくお待ちください。"
-        reject {code:"REDIS_DOWN", message:"Redis is down."}
-        return
-
-      client.hgetall userId, (err, oauthInfo) ->
-        if err
-          reject err
+      _this._findDB(res)
+      .then (dbindex) ->
+        logger.debug "userId=#{userId}, dbindex=#{dbindex}"
+        unless client.connected
+          res.send "現在メンテナンス中です。大変ご不便をおかけいたしますが、今しばらくお待ちください。"
+          reject {code:"REDIS_DOWN", message:"Redis is down."}
           return
 
-        unless oauthInfo
-          _this.sendAuthorizationUrl res, options
-          reject {code:"NO_AUTH", message:"認証していません"}
-          return
+        client.multi()
+          .select(dbindex)
+          .hgetall(userId)
+          .exec (err, result) ->
+            oauthInfo = result[1]
+            if err
+              reject err
+              return
 
-        conn = new jsforce.Connection
-          oauth2: oauth2
-          instanceUrl: oauthInfo.instanceUrl
-          accessToken: oauthInfo.accessToken
-          refreshToken: oauthInfo.refreshToken
+            unless oauthInfo
+              _this.sendAuthorizationUrl res, options
+              reject {code:"NO_AUTH", message:"認証していません"}
+              return
 
-        conn.on "refresh", (accessToken, res) ->
-          logger.info "get new accessToken: #{accessToken}"
-          client.hset userId, "accessToken", accessToken, ->
-            logger.info "save to redis accessToken: #{accessToken}"
-        
-        resolve conn
+            conn = new jsforce.Connection
+              oauth2: oauth2
+              instanceUrl: oauthInfo.instanceUrl
+              accessToken: oauthInfo.accessToken
+              refreshToken: oauthInfo.refreshToken
+
+            conn.on "refresh", (accessToken, res) ->
+              logger.info "get new accessToken: #{accessToken}"
+              client.multi()
+                .select(dbindex)
+                .hset(userId, "accessToken", accessToken)
+                .exec (err, result) ->
+                  logger.info "save to redis accessToken: #{accessToken}"
+            
+            resolve conn
+      .catch (err) ->
+        console.error err
 
   # join時に接続がなければ認証URLをユーザに送ります。
   # join時のみ使用してください。
@@ -181,5 +173,42 @@ class BotDockHelper
   # @return [Promise] jsforceのConnectionオブジェクトをラップしたPromiseオブジェクト
   checkAuthenticationOnJoin: (res) ->
     this.getJsforceConnection(res, { userId:_getUserIdOnJoin(res), skipGroupTalkHelp:true })
+
+  # 現在の組織用のRedisDB Indexを取得
+  # @private
+  _findDB: (res, index = 1) ->
+    _this = @
+    orgId = _getDomainId(res)
+    if _this.redisDBMap[orgId]
+      return new Promise (resolve, reject) ->
+        resolve _this.redisDBMap[orgId]
+    new Promise (resolve, reject) ->
+      _this.client.multi()
+        .select(index)
+        .get('ORGANIZATION_ID')
+        .exec (err, result) ->
+          if result[1] == orgId
+            _this.redisDBMap[orgId] = index
+            resolve index
+            return
+
+          unless result[1]
+            _this.client.multi()
+              .select(index)
+              .set('ORGANIZATION_ID', orgId)
+              .exec (err, resSet) ->
+                _this.redisDBMap[orgId] = index
+                resolve index
+            return
+
+          if index >= 1000
+            reject "DBは1000までしか使用できません。"
+            return
+
+          _this._findDB(res, index + 1)
+            .then (resFind) ->
+              resolve resFind
+            .catch (err) ->
+              reject err
 
 module.exports = BotDockHelper
