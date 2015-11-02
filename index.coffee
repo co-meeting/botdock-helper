@@ -68,7 +68,7 @@ class BotDockHelper
 
     userId = options.userId || res.message?.user?.id
     unless userId
-      res.send "cannot get User ID"
+      res.send "不正な操作です。"
       return
 
     if res.message.roomType != 1
@@ -122,7 +122,7 @@ class BotDockHelper
     new Promise (resolve, reject) ->
       userId = options.userId || res.message?.user?.id
       unless userId
-        res.send "cannot get User ID"
+        res.send "不正な操作です。"
         reject {code:"INVALID_PARAM", message:"cannot get User ID"}
         return
 
@@ -164,7 +164,7 @@ class BotDockHelper
             
             resolve conn
       .catch (err) ->
-        console.error err
+        reject err
 
   # join時に接続がなければ認証URLをユーザに送ります。
   # join時のみ使用してください。
@@ -173,6 +173,42 @@ class BotDockHelper
   # @return [Promise] jsforceのConnectionオブジェクトをラップしたPromiseオブジェクト
   checkAuthenticationOnJoin: (res) ->
     this.getJsforceConnection(res, { userId:_getUserIdOnJoin(res), skipGroupTalkHelp:true })
+
+  # 認証情報を削除します。
+  # 
+  # @param [hubot.Response] res HubotのResponseオブジェクト
+  logout: (res) ->
+    _this = @
+    client = @client
+    logger = @robot.logger
+
+    if res.message.roomType != 1
+      res.send "グループトークではログアウトできません。"
+      return
+
+    userId = res.message?.user?.id
+    unless userId
+      res.send "不正な操作です。"
+      return
+
+    _this._findDB(res)
+    .then (dbindex) ->
+      unless client.connected
+        res.send "現在メンテナンス中です。大変ご不便をおかけいたしますが、今しばらくお待ちください。"
+        return
+
+      client.multi()
+      .select(dbindex)
+      .del(userId)
+      .exec (err, result) ->
+        if err
+          res.send "ログアウトに失敗しました。"
+          return
+        res.send "ログアウトしました。"
+        _this.getJsforceConnection(res)
+    .catch (err) ->
+      logger.error err
+      res.send "ログアウトに失敗しました。"
 
   # 現在の組織用のRedisDB Indexを取得
   # @private
