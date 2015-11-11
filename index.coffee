@@ -6,6 +6,7 @@ class BotDockHelper
     Math.random().toString(36).substring(3)
 
   _createRedisClient = ->
+    logger = @log
     client = redis.createClient(process.env.REDIS_URL, {retry_max_delay:30*60*1000})
     client.on 'error', (err) ->
       logger.error err.message
@@ -25,13 +26,26 @@ class BotDockHelper
   _getDomainId = (res) ->
     res.message.rooms[res.message.room].domainId
 
+  # 改行を削除
+  _createLogFunc = (robot, level) ->
+    (msg) ->
+      robot.logger[level] "#{msg || ''}".replace(/\r?\n/g, '\\n')
+
+  # ロガーを作成
+  _createLogger = (robot) ->
+    logger = {}
+    for level in ['debug', 'info', 'warning', 'error']
+      logger[level] = _createLogFunc(robot, level)
+    logger
+
   # BotDockHelperのコンストラクタ
   # 
   # @param [hubot.Robot] Hubotのrobotオブジェクト
   # 
   constructor: (@robot) ->
-    _this = @
-    logger = @robot.logger
+    @log = _createLogger @robot
+    logger = @log
+
     unless process.env.REDIS_URL && 
         process.env.SALESFORCE_CLIENT_ID && 
         process.env.SALESFORCE_CLIENT_SECRET && 
@@ -64,7 +78,7 @@ class BotDockHelper
     _this = @
     oauth2 = @oauth2
     client0 = @client0
-    logger = @robot.logger
+    logger = @log
 
     userId = options.userId || res.message?.user?.id
     unless userId
@@ -118,7 +132,7 @@ class BotDockHelper
     _this = @
     oauth2 = @oauth2
     client = @client
-    logger = @robot.logger
+    logger = @log
     new Promise (resolve, reject) ->
       userId = options.userId || res.message?.user?.id
       unless userId
@@ -180,7 +194,7 @@ class BotDockHelper
   logout: (res) ->
     _this = @
     client = @client
-    logger = @robot.logger
+    logger = @log
 
     if res.message.roomType != 1
       res.send "グループトークではログアウトできません。"
