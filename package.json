@@ -4,7 +4,7 @@
   "description": "Salesforce integration for Hubot",
   "main": "index",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "mocha --compilers coffee:coffee-script/register test/"
   },
   "repository": {
     "type": "git",
@@ -27,5 +27,11 @@
     "coffee-script": "^1.10.0",
     "jsforce": "^1.5.0",
     "redis": "^2.0.1"
+  },
+  "devDependencies": {
+    "chai": "^3.4.1",
+    "mocha": "^2.3.3",
+    "sinon": "^1.17.2",
+    "sinon-chai": "^2.8.0"
   }
 }

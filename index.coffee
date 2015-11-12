@@ -2,51 +2,24 @@ jsforce = require('jsforce')
 redis = require('redis')
 
 class BotDockHelper
-  _generateSessionId = ->
-    Math.random().toString(36).substring(3)
-
-  # ペアトークにjoin時に相手のユーザIDを取得する
-  _getUserIdOnJoin = (res) ->
-    if !res.message?.roomUsers || res.message.roomUsers.length != 2
-      return
-    unless res.message?.user?.id
-      return
-    for user in res.message.roomUsers
-      if user.id != res.message.user.id
-        return user.id
-    return
-
-  # Directの組織IDを収得
-  _getDomainId = (res) ->
-    res.message.rooms[res.message.room].domainId
-
-  # 改行を削除
-  _createLogFunc = (robot, level) ->
-    (msg) ->
-      robot.logger[level] "#{msg || ''}".replace(/\r?\n/g, '\\n')
-
-  # ロガーを作成
-  _createLogger = (robot) ->
-    logger = {}
-    for level in ['debug', 'info', 'warning', 'error']
-      logger[level] = _createLogFunc(robot, level)
-    logger
+  REQUIRED_ENVS = [
+    'REDIS_URL'
+    'SALESFORCE_CLIENT_ID'
+    'SALESFORCE_CLIENT_SECRET'
+    'SALESFORCE_REDIRECT_URI'
+    'SALESFORCE_ORG_ID'
+  ]
 
   # BotDockHelperのコンストラクタ
   # 
   # @param [hubot.Robot] Hubotのrobotオブジェクト
   # 
   constructor: (@robot) ->
-    @log = _createLogger @robot
-    logger = @log
+    @log = @_createLogger @robot
 
-    unless process.env.REDIS_URL && 
-        process.env.SALESFORCE_CLIENT_ID && 
-        process.env.SALESFORCE_CLIENT_SECRET && 
-        process.env.SALESFORCE_REDIRECT_URI &&
-        process.env.SALESFORCE_ORG_ID
-      logger.error "REDIS_PORT, REDIS_HOST, SALESFORCE_CLIENT_ID, SALESFORCE_CLIENT_SECRET, SALESFORCE_REDIRECT_URI, SALESFORCE_ORG_ID must be specified."
-      process.exit 0
+    unsetEnvs = (env for env in REQUIRED_ENVS when !process.env[env])
+    if unsetEnvs.length > 0
+      throw "#{unsetEnvs.join(', ')} must be specified."
 
     # リトライ間隔は最大30分
     @client0 = @_createRedisClient()
@@ -69,10 +42,6 @@ class BotDockHelper
   # @option options [String] userId res.message.user.id以外のユーザIDにOAuthトークンを関連付けたい場合に指定する
   # @option options [String] skipGroupTalkHelp グループトークで認証していないユーザへの案内を非表示にする
   sendAuthorizationUrl: (res, options = {}) ->
-    oauth2 = @oauth2
-    client0 = @client0
-    logger = @log
-
     userId = options.userId || res.message?.user?.id
     unless userId
       res.send "不正な操作です。"
@@ -85,35 +54,35 @@ class BotDockHelper
 まずペアトークで私に話しかけて認証をしてからご利用ください。"
       return
 
-    sessionId = _generateSessionId()
+    sessionId = @_generateSessionId()
 
-    unless client0.connected
+    unless @client0.connected
+      @log.warning "#{userId} REDIS_DOWN"
       res.send "現在メンテナンス中です。大変ご不便をおかけいたしますが、今しばらくお待ちください。"
       return
 
     @_findDB(res)
       .then (dbindex) =>
-        logger.info "sessionId: #{sessionId}, userId: #{userId}, db: #{dbindex}"
-        client0.multi()
+        @log.info "sessionId: #{sessionId}, userId: #{userId}, db: #{dbindex}"
+        @client0.multi()
           .hmset sessionId,
             {
               userId: userId
               db: dbindex
-              orgId: _getDomainId(res)
+              orgId: @_getDomainId(res)
               sfOrgId: process.env.SALESFORCE_ORG_ID
             }
           .expire(sessionId, 360)
           .exec (err, result) =>
-            if err
-              logger.error err
-              return
+            throw err if err
 
-            authUrl = oauth2.getAuthorizationUrl {state: sessionId}
+            authUrl = @oauth2.getAuthorizationUrl {state: sessionId}
             res.send "このBotを利用するには、Salesforceにログインする必要があります。\n
 以下のURLからSalesforceにログインしてください。\n
 #{authUrl}"
       .catch (err) =>
-        logger.error err
+        @log.error err
+        res.send "ログインURLの生成に失敗しました。"
 
   # jsforceのConnectionオブジェクトを取得します。
   #
@@ -122,9 +91,6 @@ class BotDockHelper
   # @option options [String] skipGroupTalkHelp グループトークで認証していないユーザへの案内を非表示にする
   # @return [Promise] jsforceのConnectionオブジェクトをラップしたPromiseオブジェクト
   getJsforceConnection: (res, options = {}) ->
-    oauth2 = @oauth2
-    client = @client
-    logger = @log
     new Promise (resolve, reject) =>
       userId = options.userId || res.message?.user?.id
       unless userId
@@ -132,15 +98,17 @@ class BotDockHelper
         reject {code:"INVALID_PARAM", message:"cannot get User ID"}
         return
 
+      unless @client.connected
+        @log.warning "#{userId} REDIS_DOWN"
+        res.send "現在メンテナンス中です。大変ご不便をおかけいたしますが、今しばらくお待ちください。"
+        reject {code:"REDIS_DOWN", message:"Redis is down."}
+        return
+
       @_findDB(res)
       .then (dbindex) =>
-        logger.debug "userId=#{userId}, dbindex=#{dbindex}"
-        unless client.connected
-          res.send "現在メンテナンス中です。大変ご不便をおかけいたしますが、今しばらくお待ちください。"
-          reject {code:"REDIS_DOWN", message:"Redis is down."}
-          return
+        @log.debug "userId=#{userId}, dbindex=#{dbindex}"
 
-        client.multi()
+        @client.multi()
           .select(dbindex)
           .hgetall(userId)
           .exec (err, result) =>
@@ -155,22 +123,20 @@ class BotDockHelper
               return
 
             conn = new jsforce.Connection
-              oauth2: oauth2
+              oauth2: @oauth2
               instanceUrl: oauthInfo.instanceUrl
               accessToken: oauthInfo.accessToken
               refreshToken: oauthInfo.refreshToken
 
             conn.on "refresh", (accessToken, res) =>
-              logger.info "get new accessToken: #{accessToken}"
-              client.multi()
+              @log.info "get new accessToken: #{accessToken}"
+              @client.multi()
                 .select(dbindex)
                 .hset(userId, "accessToken", accessToken)
                 .exec (err, result) =>
-                  logger.info "save to redis accessToken: #{accessToken}"
+                  @log.info "save to redis accessToken: #{accessToken}"
             
             resolve conn
-      .catch (err) =>
-        reject err
 
   # join時に接続がなければ認証URLをユーザに送ります。
   # join時のみ使用してください。
@@ -178,15 +144,12 @@ class BotDockHelper
   # @param [hubot.Response] res HubotのResponseオブジェクト
   # @return [Promise] jsforceのConnectionオブジェクトをラップしたPromiseオブジェクト
   checkAuthenticationOnJoin: (res) ->
-    @getJsforceConnection(res, { userId:_getUserIdOnJoin(res), skipGroupTalkHelp:true })
+    @getJsforceConnection(res, { userId:@_getUserIdOnJoin(res), skipGroupTalkHelp:true })
 
   # 認証情報を削除します。
   # 
   # @param [hubot.Response] res HubotのResponseオブジェクト
   logout: (res) ->
-    client = @client
-    logger = @log
-
     if res.message.roomType != 1
       res.send "グループトークではログアウトできません。"
       return
@@ -196,37 +159,45 @@ class BotDockHelper
       res.send "不正な操作です。"
       return
 
+    unless @client.connected
+      @log.warning "#{userId} REDIS_DOWN"
+      res.send "現在メンテナンス中です。大変ご不便をおかけいたしますが、今しばらくお待ちください。"
+      return
+
     @_findDB(res)
     .then (dbindex) =>
-      unless client.connected
-        res.send "現在メンテナンス中です。大変ご不便をおかけいたしますが、今しばらくお待ちください。"
-        return
-
-      client.multi()
+      @client.multi()
       .select(dbindex)
       .del(userId)
       .exec (err, result) =>
-        if err
-          res.send "ログアウトに失敗しました。"
-          return
+        throw err if err
         res.send "ログアウトしました。"
         @getJsforceConnection(res)
     .catch (err) =>
-      logger.error err
+      @log.error err
       res.send "ログアウトに失敗しました。"
 
   # 現在の組織用のRedisDB Indexを取得
   # @private
   _findDB: (res, index = 1) ->
-    orgId = _getDomainId(res)
+    orgId = @_getDomainId(res)
+    if index >= 1000
+      return Promise.reject "DBは1000までしか使用できません。"
     if @redisDBMap[orgId]
-      return new Promise (resolve, reject) =>
-        resolve @redisDBMap[orgId]
+      return Promise.resolve @redisDBMap[orgId]
     new Promise (resolve, reject) =>
+      unless @client.connected
+        @log.warning "REDIS_DOWN"
+        res.send "現在メンテナンス中です。大変ご不便をおかけいたしますが、今しばらくお待ちください。"
+        reject {code:"REDIS_DOWN", message:"Redis is down."}
+        return
+
       @client.multi()
         .select(index)
         .get('ORGANIZATION_ID')
         .exec (err, result) =>
+          return reject(err) if err
+
           if result[1] == orgId
             @redisDBMap[orgId] = index
             resolve index
@@ -241,10 +212,6 @@ class BotDockHelper
                 resolve index
             return
 
-          if index >= 1000
-            reject "DBは1000までしか使用できません。"
-            return
-
           @_findDB(res, index + 1)
             .then (resFind) =>
               resolve resFind
@@ -254,9 +221,45 @@ class BotDockHelper
   # RedisClientを作成
   # @private
   _createRedisClient: ->
-    logger = @log
     client = redis.createClient(process.env.REDIS_URL, {retry_max_delay:30*60*1000})
-    client.on 'error', (err) ->
-      logger.error err.message
+    client.on 'error', (err) =>
+      @log.error err.message
+  
+  # セッションIDを生成
+  # @private
+  _generateSessionId: ->
+    (Math.random().toString(36).substr(3, 11) for i in [1..3]).join('')
+
+  # ペアトークにjoin時に相手のユーザIDを取得する
+  # @private
+  _getUserIdOnJoin: (res) ->
+    if !res.message?.roomUsers || res.message.roomUsers.length != 2
+      return
+    unless res.message?.user?.id
+      return
+    for user in res.message.roomUsers
+      if user.id != res.message.user.id
+        return user.id
+    return
+
+  # Directの組織IDを収得
+  # @private
+  _getDomainId: (res) ->
+    res.message.rooms[res.message.room].domainId
+
+  # 改行を削除
+  # @private
+  _createLogFunc: (level) ->
+    (msg) =>
+      @robot.logger[level] "#{msg || ''}".replace(/\r?\n/g, '\\n')
+
+  # ロガーを作成
+  # @private
+  _createLogger: (robot) ->
+    logger = {}
+    for level in ['debug', 'info', 'warning', 'error']
+      logger[level] = @_createLogFunc(level)
+    logger
+
 
 module.exports = BotDockHelper
