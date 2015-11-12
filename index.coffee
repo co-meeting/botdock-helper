@@ -5,12 +5,6 @@ class BotDockHelper
   _generateSessionId = ->
     Math.random().toString(36).substring(3)
 
-  _createRedisClient = ->
-    logger = @log
-    client = redis.createClient(process.env.REDIS_URL, {retry_max_delay:30*60*1000})
-    client.on 'error', (err) ->
-      logger.error err.message
-
   # ペアトークにjoin時に相手のユーザIDを取得する
   _getUserIdOnJoin = (res) ->
     if !res.message?.roomUsers || res.message.roomUsers.length != 2
@@ -55,8 +49,8 @@ class BotDockHelper
       process.exit 0
 
     # リトライ間隔は最大30分
-    @client0 = _createRedisClient()
-    @client = _createRedisClient()
+    @client0 = @_createRedisClient()
+    @client = @_createRedisClient()
 
     # direct組織IDとRedis DB indexのマップ保存用
     @redisDBMap = {}
@@ -223,7 +217,7 @@ class BotDockHelper
 
   # 現在の組織用のRedisDB Indexを取得
   # @private
-  _findDB: (res, index = 1) =>
+  _findDB: (res, index = 1) ->
     orgId = _getDomainId(res)
     if @redisDBMap[orgId]
       return new Promise (resolve, reject) =>
@@ -256,5 +250,13 @@ class BotDockHelper
               resolve resFind
             .catch (err) =>
               reject err
+  
+  # RedisClientを作成
+  # @private
+  _createRedisClient: ->
+    logger = @log
+    client = redis.createClient(process.env.REDIS_URL, {retry_max_delay:30*60*1000})
+    client.on 'error', (err) ->
+      logger.error err.message
 
 module.exports = BotDockHelper
