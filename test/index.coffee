@@ -4,7 +4,7 @@ sinonChai = require 'sinon-chai'
 expect = chai.expect
 chai.use sinonChai
 
-BotDockHelper = require("../index")
+BotDockHelper = require("../src/index")
 
 jsforce = require('jsforce')
 
@@ -260,6 +260,16 @@ describe "botdock-helper", ->
             expect(true).to.be.false
           .catch (err) ->
             expect(true).to.be.true
+
+      it "Redisがダウン中はその旨のメッセージを表示", ->
+        @botdock.client.connected = false
+        @botdock._findDB(@TEXT_RESPONSE)
+          .then (result) =>
+            expect(true).to.be.false
+          .catch (err) =>
+            expect(err).to.eql {code:"REDIS_DOWN", message:"Redis is down."}
+            expect(@TEXT_RESPONSE.send).to.have.been.calledWith "
+現在メンテナンス中です。大変ご不便をおかけいたしますが、今しばらくお待ちください。"
 
       it "Redisの処理でエラーが起きると、rejectする", ->
         sinon.stub @client, 'exec', (callback) ->

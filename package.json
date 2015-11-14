@@ -2,9 +2,9 @@
   "name": "botdock-helper",
   "version": "0.0.5",
   "description": "Salesforce integration for Hubot",
-  "main": "index",
+  "main": "src/index",
   "scripts": {
-    "test": "mocha --compilers coffee:coffee-script/register test/"
+    "test": "mocha test"
   },
   "repository": {
     "type": "git",
@@ -29,9 +29,17 @@
     "redis": "^2.0.1"
   },
   "devDependencies": {
+    "blanket": "^1.1.9",
     "chai": "^3.4.1",
     "mocha": "^2.3.3",
     "sinon": "^1.17.2",
     "sinon-chai": "^2.8.0"
+  },
+  "config": {
+    "blanket": {
+      "pattern": "src",
+      "loader": "./node-loaders/coffee-script",
+      "data-cover-never": "node_modules"
+    }
   }
 }
