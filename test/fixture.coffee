@@ -159,6 +159,23 @@ module.exports =
       ]
 
   robot: ->
+    adapter:
+      bot:
+        data:
+          me:
+            "id": {
+              "high": 99999999,
+              "low": -9999999999
+            },
+            displayName: 'Sample Bot',
+            canonicalDisplayName: 'Sample Bot',
+            phoneticDisplayName: 'Sample Bot',
+            canonicalPhoneticDisplayName: 'Sample Bot',
+            "updatedAt": {
+              "high": 336,
+              "low": -596682080
+            },
+            "email": "bot@example.com"
     logger:
       debug: sinon.spy()
       info: sinon.spy()

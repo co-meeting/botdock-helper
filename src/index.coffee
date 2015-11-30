@@ -177,6 +177,50 @@ class BotDockHelper
       @log.error err
       res.send "ログアウトに失敗しました。"
 
+  # Bot毎にデータを保存します。
+  #
+  # @param [hubot.Response] res HubotのResponseオブジェクト
+  # @param [String] key 
+  # @param [Object] value 保存するデータ
+  # @return [Promise]
+  setData: (res, key, value) ->
+    robotId = @_getRobotId()
+    objectStr = JSON.stringify value
+    new Promise (resolve, reject) =>
+      @_findDB(res)
+      .then (dbindex) =>
+        @client.multi()
+        .select(dbindex)
+        .hset(robotId, key, objectStr)
+        .exec (err, result) =>
+          if err
+            reject err
+          else
+            resolve result[1]
+      .catch (err) =>
+        reject err
+
+  # Bot毎に保存したデータを取得します。
+  #
+  # @param [hubot.Response] res HubotのResponseオブジェクト
+  # @param [String] key 
+  # @return [Promise] 取得したデータをラップしたPromiseオブジェクト
+  getData: (res, key) ->
+    robotId = @_getRobotId()
+    new Promise (resolve, reject) =>
+      @_findDB(res)
+      .then (dbindex) =>
+        @client.multi()
+        .select(dbindex)
+        .hget(robotId, key)
+        .exec (err, result) =>
+          if err
+            reject err
+          else
+            resolve JSON.parse(result[1])
+      .catch (err) =>
+        reject err
+
   # 現在の組織用のRedisDB Indexを取得
   # @private
   _findDB: (res, index = 1) ->
@@ -241,6 +285,14 @@ class BotDockHelper
       if user.id != res.message.user.id
         return user.id
     return
+
+  # Direct BotのユーザIDを取得
+  # @private
+  _getRobotId: ->
+    robotId = @robot.adapter.bot?.data?.me?.id
+    if !robotId || !robotId.high || !robotId.low
+      throw new Error "Cannot get robot Id."
+    "_#{robotId.high}_#{robotId.low}"
 
   # Directの組織IDを収得
   # @private

@@ -82,6 +82,10 @@ describe "botdock-helper", ->
         expect(@botdock._getDomainId(@JOIN_RESPONSE)).to.eq '_12345678_12345678'
         expect(@botdock._getDomainId(@TEXT_RESPONSE)).to.eq '_12345678_12345678'
 
+    describe "_getRobotId", ->
+      it "BotのユーザIDが取得できる", ->
+        expect(@botdock._getRobotId()).to.eq '_99999999_-9999999999'
+
     describe "_findDB", ->
       beforeEach ->
         @botdock.client =
@@ -346,4 +350,96 @@ http://login.example.com/"
           .catch (err) =>
             expect(true).to.be.false
 
+    describe "setData", ->
+      beforeEach ->
+        @botdock._findDB = sinon.stub().returns(Promise.resolve(3))
+        @botdock.client =
+          connected: true
+          multi: ->
+          select: ->
+          hset: ->
+          exec: ->
+        @client = @botdock.client
+        sinon.stub(@client, 'multi').returns(@client)
+        sinon.stub(@client, 'select').returns(@client)
+        sinon.stub(@client, 'hset').returns(@client)
+        @data = 
+          a:1
+          arr: [1,2,3]
+          hash:
+            a: 1
+            b: 2
 
+      it "_findDBでエラーが起きると、rejectする", ->
+        @botdock._findDB.returns(Promise.reject('error!'))
+        @botdock.setData(@TEXT_RESPONSE, 'key1', @data)
+          .then (result) =>
+            expect(true).to.be.false
+          .catch (err) =>
+            expect(err).to.eq 'error!'
+
+      it "Redisの処理でエラーが起きると、rejectする", ->
+        sinon.stub @client, 'exec', (callback) =>
+          callback 'error!', []
+        @botdock.setData(@TEXT_RESPONSE, 'key1', @data)
+          .then (result) =>
+            expect(true).to.be.false
+          .catch (err) =>
+            expect(err).to.eq 'error!'
+
+      it "途中でエラーが起きなかった場合、正しくhsetが呼ばれる", ->
+        sinon.stub @client, 'exec', (callback) =>
+          callback false, [0, 1]
+        @botdock.setData(@TEXT_RESPONSE, 'key1', @data)
+          .then (result) =>
+            expect(result).to.eq 1
+            expect(@client.hset).to.have.been.calledWith '_99999999_-9999999999', 'key1', JSON.stringify(@data)
+          .catch (err) =>
+            expect(true).to.be.false
+
+    describe "getData", ->
+      beforeEach ->
+        @botdock._findDB = sinon.stub().returns(Promise.resolve(3))
+        @botdock.client =
+          connected: true
+          multi: ->
+          select: ->
+          hget: ->
+          exec: ->
+        @client = @botdock.client
+        sinon.stub(@client, 'multi').returns(@client)
+        sinon.stub(@client, 'select').returns(@client)
+        sinon.stub(@client, 'hget').returns(@client)
+        @data = 
+          a:1
+          arr: [1,2,3]
+          hash:
+            a: 1
+            b: 2
+
+      it "_findDBでエラーが起きると、rejectする", ->
+        @botdock._findDB.returns(Promise.reject('error!'))
+        @botdock.getData(@TEXT_RESPONSE, 'key1')
+          .then (result) =>
+            expect(true).to.be.false
+          .catch (err) =>
+            expect(err).to.eq 'error!'
+
+      it "Redisの処理でエラーが起きると、rejectする", ->
+        sinon.stub @client, 'exec', (callback) =>
+          callback 'error!', []
+        @botdock.getData(@TEXT_RESPONSE, 'key1')
+          .then (result) =>
+            expect(true).to.be.false
+          .catch (err) =>
+            expect(err).to.eq 'error!'
+
+      it "途中でエラーが起きなかった場合、正しくhgetが呼ばれ、その結果を取得できる", ->
+        sinon.stub @client, 'exec', (callback) =>
+          callback false, [0, JSON.stringify(@data)]
+        @botdock.getData(@TEXT_RESPONSE, 'key1')
+          .then (result) =>
+            expect(@client.hget).to.have.been.calledWith '_99999999_-9999999999', 'key1'
+            expect(result).to.eql @data
+          .catch (err) =>
+            expect(true).to.be.false
