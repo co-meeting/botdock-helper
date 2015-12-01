@@ -443,3 +443,13 @@ http://login.example.com/"
             expect(result).to.eql @data
           .catch (err) =>
             expect(true).to.be.false
+
+      it "hgetがnullを返した場合、nullを取得できる", ->
+        sinon.stub @client, 'exec', (callback) =>
+          callback false, [0, null]
+        @botdock.getData(@TEXT_RESPONSE, 'key1')
+          .then (result) =>
+            expect(@client.hget).to.have.been.calledWith '_99999999_-9999999999', 'key1'
+            expect(result).to.eq null
+          .catch (err) =>
+            expect(true).to.be.false
