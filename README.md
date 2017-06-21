@@ -10,6 +10,7 @@ HubotにSalesforce認証機能を追加します。
 - SALESFORCE_CLIENT_ID : Salesforceの接続アプリケーションのクライアントID
 - SALESFORCE_CLIENT_SECRET : Salesforceの接続アプリケーションのクライアントシークレット
 - SALESFORCE_REDIRECT_URI : Salesforceの接続アプリケーションのコールバックURL。bot-auth-serverのURLを指定する。
+- SALESFORCE_LOGIN_URL : (オプション) sandbox組織で利用する場合、 `https://test.salesforce.com` を指定する。
 
 ```coffeescript
 BotDock = require 'botdock-helper'

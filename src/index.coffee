@@ -29,8 +29,7 @@ class BotDockHelper
     @redisDBMap = {}
 
     @oauth2 = new jsforce.OAuth2 {
-      # you can change loginUrl to connect to sandbox or prerelease env.
-      # loginUrl : 'https://test.salesforce.com',
+      loginUrl : process.env.SALESFORCE_LOGIN_URL
       clientId : process.env.SALESFORCE_CLIENT_ID
       clientSecret : process.env.SALESFORCE_CLIENT_SECRET
       redirectUri : process.env.SALESFORCE_REDIRECT_URI
@@ -308,10 +307,18 @@ class BotDockHelper
   # ロガーを作成
   # @private
   _createLogger: (robot) ->
-    logger = {}
-    for level in ['debug', 'info', 'warning', 'error']
-      logger[level] = @_createLogFunc(level)
-    logger
+    if process.env.LOGGER && process.env.LOGGER == 'console'
+      {
+        debug: console.log
+        info: console.info
+        warning: console.warn
+        error: console.error
+      }
+    else
+      logger = {}
+      for level in ['debug', 'info', 'warning', 'error']
+        logger[level] = @_createLogFunc(level)
+      logger
 
 
 module.exports = BotDockHelper
